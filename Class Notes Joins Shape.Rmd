@@ -1,0 +1,61 @@
+---
+title: "Class Notes Joins Shape"
+author: "Holly Westbrook"
+date: "3/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In dplyr mutate creates new columns 
+filtering join will joins the rows that you have all the data for, so you will remove some joins
+
+```{r}
+
+library(tidyverse)
+data1 = data.frame(ID= c(1,2), 
+                   X1 = c("a1", "a2"))
+
+data2 = data.frame(ID=c(2,3),
+                   X2 = c("b1", "b2"))
+
+data1
+data2
+
+#left_join()
+data2_left = left_join(data1, data2)
+data2_left
+
+```
+
+All of data1 is preserved (the left one), and data2 is filtered by what is present in data 1
+
+```{r}
+
+#with piping
+data12_left = data1 %>% 
+  left_join(data2)
+data12_left
+
+#you can also make it explicit what you are joining by in the call
+data12_left = data1 %>% 
+  left_join(data2, by = "ID")
+data12_left
+
+#inner join()
+#only keep the rows that have a match in both data1 and data2
+data12_inner = data1 %>% 
+  inner_join(data2)
+data12_inner
+
+# full join()
+data12_full = data1 %>% 
+  full_join(data2)
+
+data12_full
+
+```
+
+ID 2 is the only thing that's common between both dataframes

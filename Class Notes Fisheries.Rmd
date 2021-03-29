@@ -1,0 +1,164 @@
+---
+title: "Class Notes Fisheries"
+author: "Holly Westbrook"
+date: "3/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+load('data/RAMLDB v4.491/DB Files With Assessment Data/R Data/DBdata[asmt][v4.491].RData')
+
+
+glimpse(timeseries)
+glimpse(stock)
+unique(stock$state) #dump data in teh deprecated state
+glimpse(tsmetrics)
+
+fish = timeseries %>% 
+    left_join(stock, by = "stockid") %>% 
+    left_join(tsmetrics, by=c("tsid"= "tsunique"))
+
+glimpse(fish)
+
+#### TCbest-MT
+fish_catch = fish %>% 
+  filter(tsid=="TCbest-MT", 
+         state =="Current")
+glimpse(fish_catch)
+
+
+#### check assessment IDs
+length(unique(fish_catch$assessid))
+length(unique(fish_catch$stockid))
+
+#removing all assessments but one per stock, keeping the one that has been going on the longest
+
+fish_max_assess = fish_catch %>% 
+  group_by(stockid,assessid) %>% 
+  summarize(max_tsyear=max(tsyear),
+            min_tsyear=min(tsyear)) %>% 
+  mutate(assessment_length = max_tsyear-min_tsyear)
+
+  
+
+glimpse(fish_max_assess)
+
+#now we'll tell it to only keep the one with the max assessment length
+fish_max_assess = fish_catch %>% 
+  group_by(stockid,assessid) %>% 
+  summarize(max_tsyear=max(tsyear),
+            min_tsyear=min(tsyear)) %>% 
+  mutate(assessment_length = max_tsyear-min_tsyear) %>% 
+  ungroup() %>% 
+  group_by(stockid) %>% 
+  filter(assessment_length == max(assessment_length)) %>% 
+  distinct(stockid, .keep_all = TRUE) #is two groups have the same assessment length, keep the first one
+  
+glimpse(fish_max_assess)  
+
+#filtering join
+fish_catch_max_assess = fish_catch %>%
+  semi_join(fish_max_assess, by = "stockid") #dump any data in fish_catch that doesn't have a matching stock id in fish max assess
+  
+glimpse(fish_catch_max_assess)
+
+```
+
+Now that we've finally cleaned our data we can use it.
+We're gonna look at cod, there was a big crash in the 90s that caused like 30,000 people to lose their jobs. So let's look at the cod stock
+
+```{r}
+cod = fish_catch_max_assess %>% 
+  filter(scientificname == "Gadus morhua")
+glimpse(cod) #there's european cod there
+unique(cod$region) # we only want canada east coast region
+
+cod = fish_catch_max_assess %>% 
+  filter(scientificname == "Gadus morhua",
+          region == "Canada East Coast") %>% 
+  group_by(tsyear) %>% #for a given year
+  summarize(total_catch = sum(tsvalue, na.rm = TRUE)) #sum all the total catch values
+
+glimpse(cod)
+
+#plot cod time series
+
+ggplot(data = cod, aes(x=tsyear, y = total_catch))+
+  geom_line()
+
+# collapse?
+#cummulative maximum
+dat = c(3,5,2,8,4,9,1)
+cummax(dat) #maximum historical value, it goes down the line for the historical max for each point in the data
+
+cod_collapse = cod %>% 
+  mutate(historical_max_catch = cummax(total_catch))
+
+glimpse(cod_collapse)
+
+cod_collapse = cod %>% 
+  mutate(historical_max_catch = cummax(total_catch),
+         collapse = (total_catch <= 0.1*historical_max_catch))
+tail(cod_collapse)
+
+### what year did the collapse happen?
+cod_collapse_year = cod_collapse %>% 
+  filter(collapse==TRUE) %>% 
+  summarise(tsyear= min(tsyear))
+cod_collapse_year
+
+#this spits out a data frame, but if you want just the numeric value you can do this
+ 
+
+cod_collapse_year = cod_collapse %>% 
+  filter(collapse==TRUE) %>% 
+  summarise(tsyear= min(tsyear)) %>% 
+  .$tsyear
+cod_collapse_year
+
+
+ggplot(data = cod_collapse, aes(x=tsyear, y = total_catch, color = collapse))+
+  geom_line()+
+  geom_vline(xintercept = cod_collapse_year) #vertical line
+
+
+#check for collapse in ALL RAM stocks
+collapse = fish_catch_max_assess %>% 
+  filter(!is.na(tsvalue)) %>% 
+  group_by(stockid) %>% 
+  mutate(historical_max_catch = cummax(tsvalue),
+         current_collapse = (tsvalue <= 0.1*historical_max_catch),#really this line is asking is the fisheries currently collapsed
+         ever_collapse = cumsum(current_collapse)>0) #if you treat a boolean like a number, false =0, true =1
+
+glimpse(collapse)
+
+#how many stocks collapsed each year
+collapse_yr = collapse %>% 
+  group_by(stockid) %>% 
+  filter(ever_collapse == TRUE) %>% 
+  summarise(first_collapse_yr = min(tsyear))
+
+ggplot(data=collapse_yr, aes(x= first_collapse_yr))+
+  geom_histogram(color="black", fill="white", binwidth = 5)
+
+#count cumulative stocks collpased over time
+n_stock_assessments = length(unique(collapse$stockid))
+n_stock_assessments
+
+collapse_ts = collapse_yr %>% 
+  count(first_collapse_yr) %>%  #count the number of times each unique value occurs in teh data frame
+  mutate(cum_first_collapse_year = cumsum(n),
+         ratio_ever_collapsed = cum_first_collapse_year/n_stock_assessments) %>% 
+  arrange(first_collapse_yr)
+  
+
+```
+
+
+
+
